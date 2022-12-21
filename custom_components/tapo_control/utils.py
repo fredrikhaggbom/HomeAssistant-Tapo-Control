@@ -19,6 +19,7 @@ from homeassistant.util import slugify
 from .const import (
     BRAND,
     ENABLE_MOTION_SENSOR,
+    ENABLE_PERSON_SENSOR,
     DOMAIN,
     LOGGER,
     CLOUD_PASSWORD,
@@ -62,6 +63,13 @@ def isOpen(ip, port):
 
 def areCameraPortsOpened(host):
     return isOpen(host, 443) and isOpen(host, 554) and isOpen(host, 2020)
+
+
+def tryParseInt(value):
+    try:
+        return int(value)
+    except:
+        return None
 
 
 async def isRtspStreamWorking(hass, host, username, password, full_url=""):
@@ -154,6 +162,27 @@ async def getCamData(hass, controller):
         motion_detection_sensitivity = None
     camData["motion_detection_enabled"] = motion_detection_enabled
     camData["motion_detection_sensitivity"] = motion_detection_sensitivity
+
+    try:
+        personDetectionData = data["getPersonDetectionConfig"]["people_detection"][
+            "detection"
+        ]
+        person_detection_enabled = personDetectionData["enabled"]
+        person_detection_sensitivity = None
+
+        sensitivity = tryParseInt(personDetectionData["sensitivity"])
+        if sensitivity is not None:
+            if sensitivity <= 33:
+                person_detection_sensitivity = "low"
+            elif sensitivity <= 66:
+                person_detection_sensitivity = "normal"
+            else:
+                person_detection_sensitivity = "high"
+    except Exception:
+        person_detection_enabled = None
+        person_detection_sensitivity = None
+    camData["person_detection_enabled"] = person_detection_enabled
+    camData["person_detection_sensitivity"] = person_detection_sensitivity
 
     try:
         presets = {
@@ -259,6 +288,7 @@ async def update_listener(hass, entry):
     username = entry.data.get(CONF_USERNAME)
     password = entry.data.get(CONF_PASSWORD)
     motionSensor = entry.data.get(ENABLE_MOTION_SENSOR)
+    personSensor = entry.data.get(ENABLE_PERSON_SENSOR)
     enableTimeSync = entry.data.get(ENABLE_TIME_SYNC)
     cloud_password = entry.data.get(CLOUD_PASSWORD)
     try:
@@ -286,13 +316,16 @@ async def update_listener(hass, entry):
     if hass.data[DOMAIN][entry.entry_id]["motionSensorCreated"]:
         await hass.config_entries.async_forward_entry_unload(entry, "binary_sensor")
         hass.data[DOMAIN][entry.entry_id]["motionSensorCreated"] = False
-    if motionSensor or enableTimeSync:
+    if hass.data[DOMAIN][entry.entry_id]["personSensorCreated"]:
+        await hass.config_entries.async_forward_entry_unload(entry, "binary_sensor")
+        hass.data[DOMAIN][entry.entry_id]["personSensorCreated"] = False
+    if motionSensor or enableTimeSync or personSensor:
         onvifDevice = await initOnvifEvents(hass, host, username, password)
         hass.data[DOMAIN][entry.entry_id]["eventsDevice"] = onvifDevice["device"]
         hass.data[DOMAIN][entry.entry_id]["onvifManagement"] = onvifDevice[
             "device_mgmt"
         ]
-        if motionSensor:
+        if motionSensor or personSensor:
             await setupOnvif(hass, entry)
 
 
@@ -373,6 +406,19 @@ async def setupEvents(hass, config_entry):
                         "Trying to create motion sensor but motion listener not set up!"
                     )
 
+                LOGGER.debug(
+                    "Binary sensor creation for motion has been forwarded to component."
+                )
+            if not hass.data[DOMAIN][config_entry.entry_id]["personSensorCreated"]:
+                hass.data[DOMAIN][config_entry.entry_id]["personSensorCreated"] = True
+                if hass.data[DOMAIN][config_entry.entry_id]["eventsListener"]:
+                    hass.data[DOMAIN][config_entry.entry_id][
+                        "eventsListener"
+                    ].createBinarySensor()
+                else:
+                    LOGGER.error(
+                        "Trying to create motion sensor but motion listener not set up!"
+                    )
                 LOGGER.debug(
                     "Binary sensor creation for motion has been forwarded to component."
                 )

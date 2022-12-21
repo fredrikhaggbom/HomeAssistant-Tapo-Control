@@ -19,6 +19,7 @@ from .const import (
     LOGGER,
     DOMAIN,
     ENABLE_MOTION_SENSOR,
+    ENABLE_PERSON_SENSOR,
     CLOUD_PASSWORD,
     ENABLE_STREAM,
     ENABLE_TIME_SYNC,
@@ -125,6 +126,15 @@ async def async_migrate_entry(hass, config_entry: ConfigEntry):
         config_entry.data = {**new}
 
         config_entry.version = 9
+    
+    if config_entry.version == 9:
+
+        new = {**config_entry.data}
+        new[ENABLE_PERSON_SENSOR] = False
+
+        config_entry.data = {**new}
+
+        config_entry.version = 10
 
     LOGGER.info("Migration to version %s successful", config_entry.version)
 
@@ -154,6 +164,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     username = entry.data.get(CONF_USERNAME)
     password = entry.data.get(CONF_PASSWORD)
     motionSensor = entry.data.get(ENABLE_MOTION_SENSOR)
+    personSensor = entry.data.get(ENABLE_PERSON_SENSOR)
     cloud_password = entry.data.get(CLOUD_PASSWORD)
     enableTimeSync = entry.data.get(ENABLE_TIME_SYNC)
 
@@ -173,10 +184,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             username = entry.data.get(CONF_USERNAME)
             password = entry.data.get(CONF_PASSWORD)
             motionSensor = entry.data.get(ENABLE_MOTION_SENSOR)
+            personSensor = entry.data.get(ENABLE_PERSON_SENSOR)
             enableTimeSync = entry.data.get(ENABLE_TIME_SYNC)
 
             # motion detection retries
-            if motionSensor or enableTimeSync:
+            if motionSensor or enableTimeSync or personSensor:
                 LOGGER.debug("Motion sensor or time sync is enabled.")
                 if (
                     not hass.data[DOMAIN][entry.entry_id]["eventsDevice"]
@@ -315,13 +327,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
 
         # Needs to execute AFTER binary_sensor creation!
-        if motionSensor or enableTimeSync:
+        if motionSensor or enableTimeSync or personSensor:
             onvifDevice = await initOnvifEvents(hass, host, username, password)
             hass.data[DOMAIN][entry.entry_id]["eventsDevice"] = onvifDevice["device"]
             hass.data[DOMAIN][entry.entry_id]["onvifManagement"] = onvifDevice[
                 "device_mgmt"
             ]
-            if motionSensor:
+            if motionSensor or personSensor:
                 LOGGER.debug("Seting up motion sensor for the first time.")
                 await setupOnvif(hass, entry)
             if enableTimeSync:
